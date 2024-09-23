@@ -8,20 +8,6 @@ beats = 0
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter('output.mp4', fourcc, 30.0, (1280, 720))
 
-# under_blue = np.array([100, 100, 23], np.uint8)
-# lower_blue = np.array([125, 255, 255], np.uint8)
-
-# under_red = np.array([130,80,30], np.uint8)
-# lower_red = np.array([190,255,255], np.uint8)
-
-
-# upper_yellow = np.array([68, 180, 200], np.uint8)
-# lower_yellow = np.array([55, 180, 180], np.uint8)
-
-# lower_green = np.array([60, 100, 50], np.uint8)
-# upper_green = np.array([70, 200, 158], np.uint8)
-
-
 lower_blue = np.array([130 - 60, 200 - 60, 170 - 60], np.uint8)
 upper_blue = np.array([130 + 40, 200 + 40, 170 + 40], np.uint8)
 
@@ -66,7 +52,7 @@ def drawContours(frame, centers, color):
     return centers
 
 
-def check_catch(hands, ball, balls, catch):
+def check_catch(hands, ball, balls):
     global beats
     global last_landmark_type
     cota = 70
@@ -133,7 +119,7 @@ class Ball:
             dx = self.positions[-1][0] - self.positions[-2][0]
             dy = self.positions[-1][1] - self.positions[-2][1]
             return (dx, dy)
-               
+           
 class BallTracker:
     def __init__(self):
         self.balls = {}  # Ahora, un diccionario de {id: Ball}
@@ -143,30 +129,13 @@ class BallTracker:
         """Actualiza las posiciones de las pelotas rastreadas y asigna nuevos IDs si es necesario."""
         
         balls_detected = None
+        
         for c in centers:
             balls_detected = c[0]
-            
-        thrown_balls = []
-        catched_balls = []
-        cota = 70
         for ball in self.balls.values():
-            catched = False
-            center = ball.get_current_position()
-            for hand in hands:
-                vector = (center[0]-hand[0],center[1]-hand[1])
-                distance = math.sqrt(vector[0]**2 + vector[1]**2)
-                if distance < cota:
-                    catched = True
-                    break
-            if catched:
-                catched_balls.append(ball)
-            else:
-                thrown_balls.append(ball)
-            
-        for ball in catched_balls:
             if (ball.color == color and balls_detected != None):
                 ball.positions.append(balls_detected)
-                return check_catch(hands, ball, self.balls.values(), True)
+                return check_catch(hands, ball, self.balls.values())
             
         if (balls_detected == None):
             return False, []
@@ -175,7 +144,6 @@ class BallTracker:
         self.balls[new_id] = new_ball
         return False, []
         
-
 def find_siteswap_patterns(secuence, size):
     if len(secuence) < 2 * size:
         return None
@@ -218,7 +186,6 @@ with mp_holistic.Holistic(
 
     while True:
         ret, frame = cap.read()
-        
         height,width = frame.shape[:2]
         
         if ret == False:
@@ -228,76 +195,47 @@ with mp_holistic.Holistic(
         hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
         results = holistic.process(frame_rgb)
 
-        
         # Postura
         mp_drawing.draw_landmarks(
             frame, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS,
             mp_drawing.DrawingSpec(color=(128, 0, 255), thickness=2, circle_radius=1),
             mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=2))
         
-        
-        
         if ret:
             # convertir a hvs para buscar por color
             frameHVS = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            # mask = cv2.inRange(frameHVS, under_red, lower_red)
-            # maskBlue = cv2.inRange(frameHVS, under_blue, lower_blue)
-            # maskYellow = cv2.inRange(frameHVS, lower_yellow, upper_yellow)
-            # maskGreen = cv2.inRange(frameHVS, lower_green, upper_green)
 
             mask_blue = cv2.inRange(hsv_frame, lower_blue, upper_blue)
             mask_green = cv2.inRange(hsv_frame, lower_green, upper_green)
             mask_purple = cv2.inRange(hsv_frame, lower_purple, upper_purple)
-            
-            
-            # centers = detect_centers(mask)
-            # centersBlue = detect_centers(maskBlue)
-            # centersYellow = detect_centers(maskYellow)
-            # centersGreen = detect_centers(maskGreen)
             
             centersBlue = detect_centers(mask_blue)
             centersPurple= detect_centers(mask_purple)
             centersGreen = detect_centers(mask_green)
             
             hands_positions = []
-            
             if results.pose_landmarks:
                 pose_landmarks = results.pose_landmarks.landmark
                 for landmark_type, lm in enumerate(pose_landmarks):
                     if landmark_type == 18 or landmark_type == 17:
                         hands_positions.append((lm.x*width, lm.y*height, landmark_type))
                 
-
-
             # detectar donde estan actualmente las pelotas
-            # catchRed, countRed = ballTracker.update(centers, hands_positions, "red")
-            # catchBlue, countBlue = ballTracker.update(centersBlue, hands_positions, "blue")
-            # catchYellow, countYellow = ballTracker.update(centersYellow, hands_positions, "yellow")
-            # catchGreen, countGreen = ballTracker.update(centersGreen, hands_positions, "green")
-
             catchBlue, countBlue = ballTracker.update(centersBlue, hands_positions, "blue")
             catchPurple, countPurple = ballTracker.update(centersPurple, hands_positions, "purple")
             catchGreen, countGreen = ballTracker.update(centersGreen, hands_positions, "green")
 
-
-
             # dibujar
-            # drawContours(frame, centers, (0, 0, 255))
             drawContours(frame, centersPurple, (238, 64, 194))
             drawContours(frame, centersBlue, (255, 0, 0))
-            # drawContours(frame, centersYellow, (255, 250, 0))
             drawContours(frame, centersGreen,   (0, 255, 0))
             
             # revisar y contar las atrapadas de pelota
-            if catchBlue == True:
+            if catchBlue:
                 secuence.append(countBlue)
-            # if catchRed == True:
-            #     secuence.append(countRed)
-            # if catchYellow == True:
-            #     secuence.append(countYellow)
-            if catchPurple == True:
+            if catchPurple:
                 secuence.append(countPurple)
-            if catchGreen == True:
+            if catchGreen:
                 secuence.append(countGreen)
             result = ' '.join(str(item) for sublist in checkSecuence(secuence) for item in sublist)
 
@@ -305,13 +243,6 @@ with mp_holistic.Holistic(
             cv2.putText(frame, "{},{},{}".format(True, beats, result), (100, 100), fort, 0.75, (0, 255, 0), 1, cv2.LINE_AA)
             cv2.circle(frame, (100,100), 40, (60, 200, 220), 5)
             
-            # under_yellow = np.array([40, 200, 200], np.uint8)
-            # lower_yellow = np.array([10, 100, 50], np.uint8)
-
-            # lower_green = np.array([30, 50, 40], np.uint8)
-            # under_green = np.array([60, 200, 220], np.uint8)
-            
-            # cv2.imshow("mask", mask)
             out.write(frame)
             cv2.imshow("frame", frame)
             if cv2.waitKey(1) & 0xff == ord('q'):
